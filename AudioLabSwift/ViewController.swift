@@ -1,7 +1,6 @@
 import UIKit
 import Metal
 
-
 class ViewController: UIViewController {
     
     @IBOutlet weak var userView: UIView!
@@ -9,7 +8,8 @@ class ViewController: UIViewController {
     struct AudioConstants {
         static let AUDIO_BUFFER_SIZE = 1024 * 4
         static let MIN_FREQUENCY_DIFFERENCE: Float = 50.0
-        static let MAGNITUDE_THRESHOLD: Float = 0.5 // Set based on your testing
+        static let MAGNITUDE_THRESHOLD: Float = 0.5
+        static let TIME_THRESHOLD: TimeInterval = 0.2
     }
     
     // Setup audio model
@@ -21,26 +21,24 @@ class ViewController: UIViewController {
     
     @IBOutlet weak var labelF1: UILabel!
     @IBOutlet weak var labelF2: UILabel!
-    @IBOutlet weak var vowelLabel: UILabel! // New label to display "oooo" or "ahhhh"
+    @IBOutlet weak var vowelLabel: UILabel!
 
-    var lastLockedFrequencies: (Float, Float)? = nil // Stores last significant frequencies
+    var lastLockedFrequencies: (Float, Float)? = nil
+    var lastDetectedTime: Date? = nil
+    var lastDetectedFrequencies: (Float, Float)? = nil
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
         if let graph = self.graph {
             graph.setBackgroundColor(r: 0, g: 0, b: 0, a: 1)
-            
-            // Add in graphs for display
             graph.addGraph(withName: "fft", shouldNormalizeForFFT: true, numPointsInGraph: AudioConstants.AUDIO_BUFFER_SIZE/2)
-            graph.makeGrids() // Add grids to graph
+            graph.makeGrids()
         }
         
         audio.startMicrophoneProcessing(withFps: 20)
-        
         audio.play()
         
-        // Start the timer for graph updates
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
             self.updateGraph()
             self.updateLabelsWithPeakFrequencies()
@@ -67,7 +65,6 @@ class ViewController: UIViewController {
         let fftData = audio.fftData
         let frequencyResolution = Float(audio.samplingRate) / Float(AudioConstants.AUDIO_BUFFER_SIZE)
         
-        // Find the two loudest peaks in the FFT data
         var peaks: [(frequency: Float, magnitude: Float)] = []
         
         for (index, magnitude) in fftData.enumerated() {
@@ -77,27 +74,24 @@ class ViewController: UIViewController {
             }
         }
         
-        // Sort peaks by magnitude in descending order
         peaks.sort { $0.magnitude > $1.magnitude }
         
         if peaks.count >= 2 {
             let topTwoFrequencies = (peaks[0].frequency, peaks[1].frequency)
             
-            // Check if they are at least 50Hz apart and have large magnitudes
             if abs(topTwoFrequencies.0 - topTwoFrequencies.1) >= AudioConstants.MIN_FREQUENCY_DIFFERENCE {
-                labelF1.text = String(format: "F1: %.2f Hz", topTwoFrequencies.0)
-                labelF2.text = String(format: "F2: %.2f Hz", topTwoFrequencies.1)
+                let now = Date()
                 
-                // Lock the frequencies in place
-                lastLockedFrequencies = topTwoFrequencies
-                
-                // Check if the formant frequencies correspond to "oooo" or "ahhhh"
-                if isOooo(f1: topTwoFrequencies.0, f2: topTwoFrequencies.1) {
-                    vowelLabel.text = "Vowel: Ooooo"
-                } else if isAhhhh(f1: topTwoFrequencies.0, f2: topTwoFrequencies.1) {
-                    vowelLabel.text = "Vowel: Ahhhh"
+                // Check if these frequencies are the same as the previously detected ones
+                if let lastFrequencies = lastDetectedFrequencies, lastFrequencies == topTwoFrequencies {
+                    // If the frequencies have been detected for more than 200ms, update the labels
+                    if let lastTime = lastDetectedTime, now.timeIntervalSince(lastTime) >= AudioConstants.TIME_THRESHOLD {
+                        updateFrequencyLabels(frequencies: topTwoFrequencies)
+                    }
                 } else {
-                    vowelLabel.text = "Vowel: Unknown"
+                    // If new frequencies are detected, reset the detection time
+                    lastDetectedFrequencies = topTwoFrequencies
+                    lastDetectedTime = now
                 }
             }
         } else if let lastLocked = lastLockedFrequencies {
@@ -112,7 +106,21 @@ class ViewController: UIViewController {
         }
     }
     
-    // Helper function to determine if the sound is "oooo"
+    // Helper function to update the frequency labels and lock the frequencies
+    func updateFrequencyLabels(frequencies: (Float, Float)) {
+        labelF1.text = String(format: "F1: %.2f Hz", frequencies.0)
+        labelF2.text = String(format: "F2: %.2f Hz", frequencies.1)
+        lastLockedFrequencies = frequencies
+        
+        if isOooo(f1: frequencies.0, f2: frequencies.1) {
+            vowelLabel.text = "Vowel: Ooooo"
+        } else if isAhhhh(f1: frequencies.0, f2: frequencies.1) {
+            vowelLabel.text = "Vowel: Ahhhh"
+        } else {
+            vowelLabel.text = "Vowel: Unknown"
+        }
+    }
+    
     func isOooo(f1: Float, f2: Float) -> Bool {
         return (f1 >= 400 && f1 <= 600) && (f2 >= 700 && f2 <= 900)
     }

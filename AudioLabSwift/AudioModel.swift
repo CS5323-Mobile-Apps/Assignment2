@@ -2,7 +2,7 @@
 //  AudioModel.swift
 //  AudioLabSwift
 //
-//  Created by Eric Larson 
+//  Created by Eric Larson
 //  Copyright © 2020 Eric Larson. All rights reserved.
 //
 

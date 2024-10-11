@@ -6,7 +6,7 @@ class ModuleBViewController: UIViewController {
     @IBOutlet weak var gestureLabel: UILabel!
     @IBOutlet weak var frequencySlider: UISlider!
     @IBOutlet weak var frequencyLabel: UILabel!
-    
+
     struct AudioConstants{
         static let AUDIO_BUFFER_SIZE = 1024*4
     }

@@ -21,7 +21,8 @@ class ViewController: UIViewController {
     
     @IBOutlet weak var labelF1: UILabel!
     @IBOutlet weak var labelF2: UILabel!
-    
+    @IBOutlet weak var vowelLabel: UILabel! // New label to display "oooo" or "ahhhh"
+
     var lastLockedFrequencies: (Float, Float)? = nil // Stores last significant frequencies
     
     override func viewDidLoad() {
@@ -89,6 +90,15 @@ class ViewController: UIViewController {
                 
                 // Lock the frequencies in place
                 lastLockedFrequencies = topTwoFrequencies
+                
+                // Check if the formant frequencies correspond to "oooo" or "ahhhh"
+                if isOooo(f1: topTwoFrequencies.0, f2: topTwoFrequencies.1) {
+                    vowelLabel.text = "Vowel: Ooooo"
+                } else if isAhhhh(f1: topTwoFrequencies.0, f2: topTwoFrequencies.1) {
+                    vowelLabel.text = "Vowel: Ahhhh"
+                } else {
+                    vowelLabel.text = "Vowel: Unknown"
+                }
             }
         } else if let lastLocked = lastLockedFrequencies {
             // Display locked frequencies if no new large-magnitude frequencies are found
@@ -98,6 +108,16 @@ class ViewController: UIViewController {
             // No significant frequencies found and no locked frequencies, show "N/A"
             labelF1.text = "F1: N/A"
             labelF2.text = "F2: N/A"
+            vowelLabel.text = "Vowel: N/A"
         }
+    }
+    
+    // Helper function to determine if the sound is "oooo"
+    func isOooo(f1: Float, f2: Float) -> Bool {
+        return (f1 >= 400 && f1 <= 600) && (f2 >= 700 && f2 <= 900)
+    }
+
+    func isAhhhh(f1: Float, f2: Float) -> Bool {
+        return (f1 >= 600 && f1 <= 900) && (f2 >= 1200 && f2 <= 1400)
     }
 }

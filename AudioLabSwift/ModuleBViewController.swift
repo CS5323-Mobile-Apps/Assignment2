@@ -34,7 +34,7 @@ class ModuleBViewController: UIViewController {
         currentFrequency = 18000
         previousPeakFrequency = currentFrequency
 
-        audio.startMicrophoneProcessing(withFps: 60)
+        audio.startMicrophoneProcessing(withFps: 20)
         audio.play()
 
         if let graph = self.graph {

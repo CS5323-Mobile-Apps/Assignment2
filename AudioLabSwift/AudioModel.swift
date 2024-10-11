@@ -45,30 +45,16 @@ class AudioModel {
     
     // public function for starting processing of microphone data
     func startMicrophoneProcessing(withFps:Double){
-        // setup the microphone to copy to circualr buffer
-        if let manager = self.audioManager,
-            let fileReader = self.fileReader{
-            manager.inputBlock = self.handleMicrophone
-            manager.outputBlock = self.handleSpeakerQueryWithSinusoids
+            // setup the microphone to copy to circualr buffer
+            if let manager = self.audioManager{
+                manager.inputBlock = self.handleMicrophone
             
-            // repeat this fps times per second using the timer class
-            //   every time this is called, we update the arrays "timeData" and "fftData"
-            Timer.scheduledTimer(withTimeInterval: 1.0/withFps, repeats: true) { _ in
-                self.runEveryInterval()
-            }
-            
-            Timer.scheduledTimer(withTimeInterval: 1.0/5.0, repeats: true) { _ in
-                // set to opposite
-                self.pulseValue += 1
-                if self.pulseValue > 5{
-                    self.pulseValue = 0
+                Timer.scheduledTimer(withTimeInterval: 1.0/withFps, repeats: true) { _ in
+                    self.runEveryInterval()
                 }
+                
             }
-            
-            fileReader.play()
-            
         }
-    }
     
     
     // You must call this when you want the audio to start being handled by our model

@@ -2,53 +2,47 @@ import UIKit
 import Metal
 
 class ModuleBViewController: UIViewController {
-    
-    // UI Elements
+
     var gestureLabel: UILabel!
     var frequencySlider: UISlider!
     var frequencyLabel: UILabel!
-    var graphView: UIView!
-    
-    // Audio Constants
+    var userView: UIView!
+
     struct AudioConstants {
         static let AUDIO_BUFFER_SIZE = 1024 * 4
-        static let MIN_FREQUENCY: Float = 17000.0 // Hz
-        static let MAX_FREQUENCY: Float = 20000.0 // Hz
-        static let FFT_ZOOM_SIZE: Int = 300
     }
-    
-    // Audio model for processing
+
     let audio = AudioModel(buffer_size: AudioConstants.AUDIO_BUFFER_SIZE)
+    var timer: Timer? = nil
     var currentFrequency: Float = 18000 {
         didSet {
-            frequencyLabel.text = "Frequency: \(currentFrequency) Hz"
-            audio.sineFrequency1 = currentFrequency // Set inaudible tone frequency
+            frequencyLabel.text = "Frequency: \(Int(currentFrequency)) Hz"
+            audio.sineFrequency1 = currentFrequency
         }
     }
-    lazy var graph: MetalGraph? = {
-        return MetalGraph(userView: self.graphView)
-    }()
     
-    var timer: Timer? = nil
+    var previousPeakFrequency: Float = 0.0
+    let samplingRate: Float = 44100.0
+
+    lazy var graph: MetalGraph? = {
+        return MetalGraph(userView: self.userView)
+    }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupUI()
-        
-        // Setup the graph
+        currentFrequency = 18000
+        previousPeakFrequency = currentFrequency
+
+        audio.startMicrophoneProcessing(withFps: 60)
+        audio.play()
+
         if let graph = self.graph {
-            graph.setBackgroundColor(r: 0, g: 0, b: 0, a: 1)
-            graph.addGraph(withName: "fftZoomed", shouldNormalizeForFFT: true, numPointsInGraph: AudioConstants.FFT_ZOOM_SIZE)
-            graph.makeGrids()
+            graph.addGraph(withName: "fft", shouldNormalizeForFFT: true, numPointsInGraph: AudioConstants.AUDIO_BUFFER_SIZE / 2)
         }
-        
-        // Start audio processing
-        audio.startMicrophoneProcessing(withFps: 20)
-        audio.play() // Play the inaudible tone
-        
-        // Setup a timer to update the graph and gesture detection
-        timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-            self.updateGraph()
+
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
+            self.updateFFTGraph()
             self.detectDopplerShift()
         }
     }
@@ -58,76 +52,80 @@ class ModuleBViewController: UIViewController {
         timer?.invalidate()
         audio.stop()
     }
-    
-    // UI Setup
+
     func setupUI() {
-        // Frequency slider
         frequencySlider = UISlider(frame: CGRect(x: 20, y: 80, width: 280, height: 40))
-        frequencySlider.minimumValue = AudioConstants.MIN_FREQUENCY
-        frequencySlider.maximumValue = AudioConstants.MAX_FREQUENCY
+        frequencySlider.minimumValue = 17000
+        frequencySlider.maximumValue = 20000
         frequencySlider.value = currentFrequency
         frequencySlider.addTarget(self, action: #selector(frequencySliderChanged), for: .valueChanged)
         view.addSubview(frequencySlider)
 
-        // Frequency label
         frequencyLabel = UILabel(frame: CGRect(x: 20, y: 120, width: 280, height: 40))
-        frequencyLabel.text = "Frequency: \(currentFrequency) Hz"
+        frequencyLabel.text = "Frequency: \(Int(currentFrequency)) Hz"
         view.addSubview(frequencyLabel)
-        
-        // Gesture label
+
         gestureLabel = UILabel(frame: CGRect(x: 20, y: 160, width: 280, height: 40))
         gestureLabel.text = "No Gesture"
         view.addSubview(gestureLabel)
 
-        // Graph view
-        graphView = UIView(frame: CGRect(x: 20, y: 200, width: 280, height: 200))
-        view.addSubview(graphView)
+        userView = UIView(frame: CGRect(x: 20, y: 200, width: 280, height: 200))
+        view.addSubview(userView)
     }
-    
+
     @objc func frequencySliderChanged(_ sender: UISlider) {
         currentFrequency = sender.value
+        previousPeakFrequency = currentFrequency
     }
-    
-    // Update the FFT graph
-    func updateGraph() {
+
+    func updateFFTGraph() {
         if let graph = self.graph {
-            let startIdx: Int = 150 * AudioConstants.AUDIO_BUFFER_SIZE / audio.samplingRate
-            let subArray: [Float] = Array(self.audio.fftData[startIdx...startIdx + AudioConstants.FFT_ZOOM_SIZE])
-            graph.updateGraph(data: subArray, forKey: "fftZoomed")
+            graph.updateGraph(data: self.audio.fftData, forKey: "fft")
         }
     }
-    
-    // Detect Doppler shift to recognize gestures
+
     func detectDopplerShift() {
         let fftData = audio.fftData
-        let threshold: Float = 4.0
-        let peakFrequency = findPeakInFFT(fftData)
-        
-        // Doppler shift detection: compare peak frequency with the set frequency
-        let frequencyShift = peakFrequency - currentFrequency
-        
-        if frequencyShift > threshold {
+        let frequencyResolution = samplingRate / Float(AudioConstants.AUDIO_BUFFER_SIZE)
+        let currentPeakFrequency = findPeakFrequency(fftData: fftData, frequencyResolution: frequencyResolution)
+        let frequencyShift = currentPeakFrequency - previousPeakFrequency
+        previousPeakFrequency = currentPeakFrequency
+
+        let shiftThreshold: Float = 20.0
+        let minMagnitude: Float = -50.0
+        let peakIndex = Int(currentPeakFrequency / frequencyResolution)
+        let peakMagnitude = fftData[peakIndex]
+
+        if peakMagnitude < minMagnitude {
+            gestureLabel.text = "No Gesture"
+            return
+        }
+
+        if frequencyShift > shiftThreshold {
             gestureLabel.text = "Gesture Toward"
-        } else if frequencyShift < -threshold {
+        } else if frequencyShift < -shiftThreshold {
             gestureLabel.text = "Gesture Away"
         } else {
             gestureLabel.text = "No Gesture"
         }
     }
-    
-    // Find the peak frequency in the FFT data
-    func findPeakInFFT(_ fftData: [Float]) -> Float {
-        var maxIndex = 0
-        var maxMagnitude: Float = 0
-        
-        for (index, magnitude) in fftData.enumerated() {
-            if magnitude > maxMagnitude {
-                maxMagnitude = magnitude
-                maxIndex = index
+
+    func findPeakFrequency(fftData: [Float], frequencyResolution: Float) -> Float {
+        var maxMagnitude: Float = -Float.infinity
+        var maxIndex: Int = 0
+
+        let targetFrequency = currentFrequency
+        let frequencyTolerance: Float = 1000.0
+        let startIndex = max(Int((targetFrequency - frequencyTolerance) / frequencyResolution), 0)
+        let endIndex = min(Int((targetFrequency + frequencyTolerance) / frequencyResolution), fftData.count - 1)
+
+        for i in startIndex...endIndex {
+            if fftData[i] > maxMagnitude {
+                maxMagnitude = fftData[i]
+                maxIndex = i
             }
         }
-        
-        let frequencyResolution = Float(audio.samplingRate) / Float(AudioConstants.AUDIO_BUFFER_SIZE)
+
         return Float(maxIndex) * frequencyResolution
     }
 }

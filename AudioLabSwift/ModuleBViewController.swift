@@ -13,6 +13,7 @@ class ModuleBViewController: UIViewController {
         static let AUDIO_BUFFER_SIZE = 1024 * 4
     }
 
+    // Initialize the audio model
     let audio = AudioModel(buffer_size: AudioConstants.AUDIO_BUFFER_SIZE)
     var timer: Timer? = nil
     var currentFrequency: Float = 17000 {
@@ -21,21 +22,25 @@ class ModuleBViewController: UIViewController {
             audio.sineFrequency1 = currentFrequency
         }
     }
-    
+
     var previousPeakFrequency: Float = 0.0
     let samplingRate: Float = 44100.0
     var smoothedFrequencyShift: Float = 0.0
 
+    // Lazy initialization for the graph
     lazy var graph: MetalGraph? = {
         return MetalGraph(userView: self.userView)
     }()
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        // Setup the UI components (Slider, Labels, etc.)
         setupUI()
         currentFrequency = 17000
         previousPeakFrequency = currentFrequency
 
+        // Start microphone processing and play the inaudible tone
         audio.startMicrophoneProcessing(withFps: 20)
         audio.play()
 
@@ -43,6 +48,7 @@ class ModuleBViewController: UIViewController {
             graph.addGraph(withName: "fftZoomed", shouldNormalizeForFFT: true, numPointsInGraph: 300)
         }
 
+        // Set up the timer to periodically update the FFT graph and detect gestures
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
             self.updateFFTGraph()
             self.detectDopplerShift()
@@ -52,7 +58,7 @@ class ModuleBViewController: UIViewController {
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         timer?.invalidate()
-        audio.stop()
+        audio.stop() // Stop audio when leaving the view
     }
 
     func setupUI() {
@@ -84,24 +90,34 @@ class ModuleBViewController: UIViewController {
         previousPeakFrequency = currentFrequency
     }
 
+    // Update the FFT graph with the most recent data and display in dB
     func updateFFTGraph() {
         if let graph = self.graph {
             let fftData = self.audio.fftData
             let frequencyResolution = samplingRate / Float(AudioConstants.AUDIO_BUFFER_SIZE)
-            let startIdx = max(0, Int(150 / frequencyResolution))
+
+            // Calculate start and end indices for the zoomed FFT
+            let startIdx = max(0, Int((currentFrequency - 1000) / frequencyResolution))  // Zoom into 1kHz around the current frequency
             let endIdx = min(startIdx + 300, fftData.count - 1)
 
+            // Get the zoomed portion of the FFT data
             let subArray = Array(fftData[startIdx...endIdx])
+
+            // Convert FFT magnitudes to decibels
             let fftDataInDb = subArray.map { 20 * log10(max($0, 0.0001)) }
 
+            // Find the peak dB value
             if let peakDb = fftDataInDb.max() {
+                // Update the dB label with the peak value
                 dBLabel.text = String(format: "dB: %.2f", peakDb)
             }
 
+            // Update the MetalGraph with the zoomed FFT in dB
             graph.updateGraph(data: fftDataInDb, forKey: "fftZoomed")
         }
     }
 
+    // Function to detect Doppler shift based on the difference in frequencies
     func detectDopplerShift() {
         let fftData = audio.fftData
         let frequencyResolution = samplingRate / Float(AudioConstants.AUDIO_BUFFER_SIZE)
@@ -132,6 +148,7 @@ class ModuleBViewController: UIViewController {
         previousPeakFrequency = currentPeakFrequency
     }
 
+    // Helper function to find the peak frequency from the FFT data
     func findPeakFrequency(fftData: [Float], frequencyResolution: Float) -> Float {
         var maxMagnitude: Float = -Float.infinity
         var maxIndex: Int = 0

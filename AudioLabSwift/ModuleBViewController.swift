@@ -7,7 +7,6 @@ class ModuleBViewController: UIViewController {
     var frequencySlider: UISlider!
     var frequencyLabel: UILabel!
     var userView: UIView!
-    var dBLabel: UILabel!
 
     struct AudioConstants {
         static let AUDIO_BUFFER_SIZE = 1024 * 4
@@ -19,7 +18,7 @@ class ModuleBViewController: UIViewController {
     var currentFrequency: Float = 17000 {
         didSet {
             frequencyLabel.text = "Frequency: \(Int(currentFrequency)) Hz"
-            audio.sineFrequency1 = currentFrequency
+            audio.sineFrequency1 = currentFrequency  // Set frequency for inaudible tone
         }
     }
 
@@ -35,16 +34,17 @@ class ModuleBViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // Setup the UI components (Slider, Labels, etc.)
+    
         setupUI()
-        currentFrequency = 17000
+        currentFrequency = 17000  // Set the initial frequency to 17kHz
         previousPeakFrequency = currentFrequency
 
         // Start microphone processing and play the inaudible tone
-        audio.startMicrophoneProcessing(withFps: 20)
-        audio.play()
+        audio.startMicrophoneProcessingOne(withFps: 20)  // Capture FFT at 20 FPS
+        audio.play()  // Play tone to speakers (inaudible 17-20kHz)
 
         if let graph = self.graph {
+            // Add the FFT graph for zoomed FFT visualization
             graph.addGraph(withName: "fftZoomed", shouldNormalizeForFFT: true, numPointsInGraph: 300)
         }
 
@@ -58,9 +58,10 @@ class ModuleBViewController: UIViewController {
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         timer?.invalidate()
-        audio.stop() // Stop audio when leaving the view
+        audio.stop()  // Stop audio when leaving the view
     }
 
+    // Programmatically setup the UI
     func setupUI() {
         frequencySlider = UISlider(frame: CGRect(x: 20, y: 80, width: 280, height: 40))
         frequencySlider.minimumValue = 17000
@@ -79,42 +80,29 @@ class ModuleBViewController: UIViewController {
 
         userView = UIView(frame: CGRect(x: 20, y: 200, width: 280, height: 200))
         view.addSubview(userView)
-
-        dBLabel = UILabel(frame: CGRect(x: 20, y: 420, width: 280, height: 40))
-        dBLabel.text = "dB: N/A"
-        view.addSubview(dBLabel)
     }
 
+    // Update the slider when the frequency is changed
     @objc func frequencySliderChanged(_ sender: UISlider) {
         currentFrequency = sender.value
         previousPeakFrequency = currentFrequency
     }
 
-    // Update the FFT graph with the most recent data and display in dB
     func updateFFTGraph() {
-        if let graph = self.graph {
-            let fftData = self.audio.fftData
-            let frequencyResolution = samplingRate / Float(AudioConstants.AUDIO_BUFFER_SIZE)
-
-            // Calculate start and end indices for the zoomed FFT
-            let startIdx = max(0, Int((currentFrequency - 1000) / frequencyResolution))  // Zoom into 1kHz around the current frequency
-            let endIdx = min(startIdx + 300, fftData.count - 1)
-
-            // Get the zoomed portion of the FFT data
-            let subArray = Array(fftData[startIdx...endIdx])
-
-            // Convert FFT magnitudes to decibels
-            let fftDataInDb = subArray.map { 20 * log10(max($0, 0.0001)) }
-
-            // Find the peak dB value
-            if let peakDb = fftDataInDb.max() {
-                // Update the dB label with the peak value
-                dBLabel.text = String(format: "dB: %.2f", peakDb)
-            }
-
-            // Update the MetalGraph with the zoomed FFT in dB
-            graph.updateGraph(data: fftDataInDb, forKey: "fftZoomed")
+        guard let graph = self.graph else {
+            print("Graph is not initialized.")
+            return
         }
+        
+        let minfreq = currentFrequency
+        let startIdx = max(0, (Int(minfreq) - 50) * AudioConstants.AUDIO_BUFFER_SIZE / Int(audio.samplingRate))
+        let endIdx = min(startIdx + 300, audio.fftData.count - 1) // Ensure the subarray doesn't go out of bounds
+        
+        // Extract a portion of the FFT data
+        let subArray = Array(audio.fftData[startIdx...endIdx])
+        
+        // Update the MetalGraph with the zoomed FFT data
+        graph.updateGraph(data: subArray, forKey: "fftZoomed")
     }
 
     // Function to detect Doppler shift based on the difference in frequencies

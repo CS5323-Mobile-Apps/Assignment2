@@ -26,6 +26,18 @@ class AudioModel {
     func startMicrophoneProcessing(withFps: Double) {
         if let manager = self.audioManager {
             manager.inputBlock = self.handleMicrophone
+//            manager.outputBlock = self.handleSpeakerQueryWithSinusoids
+            
+            // Repeat this fps times per second using the timer class
+            Timer.scheduledTimer(withTimeInterval: 1.0 / withFps, repeats: true) { _ in
+                self.runEveryInterval()
+            }
+        }
+    }
+    
+    func startMicrophoneProcessingOne(withFps: Double) {
+        if let manager = self.audioManager {
+            manager.inputBlock = self.handleMicrophone
             manager.outputBlock = self.handleSpeakerQueryWithSinusoids
             
             // Repeat this fps times per second using the timer class
@@ -40,16 +52,22 @@ class AudioModel {
             manager.play()
         }
     }
-    
-    func stop() {
-        if let manager = self.audioManager {
+
+    func stop(){
+        if let manager = self.audioManager{
             manager.pause()
             manager.inputBlock = nil
             manager.outputBlock = nil
         }
+        
+        if let buffer = self.inputBuffer{
+            buffer.clear() // just makes zeros
+        }
         inputBuffer = nil
         fftHelper = nil
+    
     }
+    
     
     // MARK: Private Properties
     private lazy var audioManager: Novocaine? = {
@@ -64,6 +82,7 @@ class AudioModel {
         return CircularBuffer.init(numChannels: Int64(self.audioManager!.numInputChannels),
                                    andBufferSize: Int64(BUFFER_SIZE))
     }()
+    
     
     // MARK: Model Callback Methods
     private func runEveryInterval() {
